@@ -5,11 +5,11 @@ import string
 import hashlib
 import uuid
 import binascii
+from functools import wraps
 
 from flask import Flask, request, jsonify, redirect, session
 from database import db_session, init_db, init_engine
 
-import wrappers
 from models import User
 
 
@@ -42,6 +42,21 @@ def new_user(username, password, email, first_name, last_name):
     return user
 
 
+@app.before_request
+def func():
+    session.modified = True
+
+
+def require_token(func):
+    @wraps(func)
+    def check_token(*args, **kwargs):
+        if request.headers.get('auth_token') not in session['auth_token']:
+            return jsonify({'message': "please login"}), 401
+        return func(*args, **kwargs)
+
+    return check_token
+
+
 @app.route('/user', methods=['POST'])
 def create_user():
     req = request.get_json(force=True)
@@ -60,9 +75,17 @@ def create_user():
         return jsonify({'message': 'user created.'}), 200
 
 
-@app.route('/login', methods=['GET'])
-def get_login():
-    pass
+@app.route('/user', methods=['GET'])
+@require_token
+def get_user():
+    user = User.from_token(request.headers.get('auth_token'))
+    return jsonify({'user': user.as_private_dict()}), 200
+
+
+@app.route('/logout', methods=['GET'])
+def logout():
+    session.clear()
+    return jsonify({'success': True}), 200
 
 
 @app.route('/login', methods=['POST'])
@@ -77,6 +100,7 @@ def login():
     if user and get_hash(password, user.salt) == user.password:
         token = uuid.uuid4().hex
         user.token = token
+        session['auth_token'] = token
 
         db_session.query(User).filter_by(id=user.id) \
             .update({"token": user.token})
@@ -103,3 +127,4 @@ if __name__ == "__main__":
     init_engine(app.config['DATABASE_URI'])
     init_db()
     app.run(host='0.0.0.0')
+    session(app)
