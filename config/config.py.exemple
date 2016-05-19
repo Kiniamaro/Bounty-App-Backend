@@ -1,0 +1,3 @@
+DEBUG = True
+DATABASE_URI = 'sqlite:////tmp/test.db'
+SECRET_KEY = "CHANGE THIS"
